@@ -1,0 +1,8 @@
+/bin/
+/work/
+*.exe
+*.test
+docs/
+*.md
+!/README.md
+__pycache__/

@@ -1,0 +1,104 @@
+name: CI
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go test -timeout 180s ./...
+      - run: go vet ./...
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            extension: ''
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            extension: ''
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            extension: .exe
+          - os: windows-latest
+            goos: windows
+            goarch: arm64
+            extension: .exe
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            extension: ''
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            extension: ''
+    runs-on: ${{ matrix.os }}
+    env:
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build
+        run: go build -trimpath -o dist/assh${{ matrix.extension }} ./cmd/assh
+      - name: Package and checksum
+        shell: python {0}
+        run: |
+          import hashlib
+          import os
+          import pathlib
+          import re
+          import tarfile
+          import zipfile
+
+          dist = pathlib.Path('dist')
+          binary = dist / ('assh.exe' if os.environ['GOOS'] == 'windows' else 'assh')
+          version = re.search(r'const Version = "([^"]+)"', pathlib.Path('internal/version/version.go').read_text()).group(1)
+          name = 'assh-' + version + '-' + os.environ['GOOS'] + '-' + os.environ['GOARCH']
+          if os.environ['GOOS'] == 'windows':
+              archive = dist / (name + '.zip')
+              with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as output:
+                  output.write(binary, binary.name)
+                  output.write('LICENSE', 'LICENSE')
+                  output.write('README.md', 'README.md')
+          else:
+              archive = dist / (name + '.tar.gz')
+              binary.chmod(0o755)
+              with tarfile.open(archive, 'w:gz') as output:
+                  output.add(binary, arcname=binary.name)
+                  output.add('LICENSE', arcname='LICENSE')
+                  output.add('README.md', arcname='README.md')
+          digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+          pathlib.Path(str(archive) + '.sha256').write_text(digest + '  ' + archive.name + '\n', encoding='utf-8')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: assh-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 30

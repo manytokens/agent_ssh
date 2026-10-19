@@ -1,0 +1,12 @@
+{
+  "name": "agent_ssh",
+  "build": { "dockerfile": "Dockerfile" },
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+  "mounts": [
+    "source=agent_ssh_go_cache,target=/go/pkg/mod,type=volume",
+    "source=agent_ssh_go_build,target=/root/.cache/go-build,type=volume"
+  ],
+  "customizations": { "vscode": { "extensions": ["golang.go"] } },
+  "postCreateCommand": "go mod download"
+}
